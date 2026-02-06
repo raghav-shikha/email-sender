@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ReviseResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["revised_draft"],
+  "properties": {
+    "revised_draft": { "type": "string", "minLength": 1 }
+  }
+}
+

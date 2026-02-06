@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EmailSummary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary_bullets", "what_they_want", "suggested_next_step"],
+  "properties": {
+    "summary_bullets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "what_they_want": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "suggested_next_step": { "type": "string", "minLength": 1 },
+    "flags": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
+
