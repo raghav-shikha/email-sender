@@ -11,14 +11,14 @@ export default function SettingsPage() {
     <div className="space-y-8">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-black/60">Connect Gmail, enable push, and tune your context pack.</p>
+        <p className="text-sm text-black/60">Sign in, connect Gmail, enable push, and tune your context.</p>
       </header>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Account</CardTitle>
-            <CardDescription>Supabase email/password auth for MVP.</CardDescription>
+            <CardDescription>Sign in so we can save your inbox state and preferences.</CardDescription>
           </CardHeader>
           <CardContent>
             <AuthPanel />
@@ -28,7 +28,7 @@ export default function SettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Gmail</CardTitle>
-            <CardDescription>Offline access. Refresh token is encrypted at rest by the API.</CardDescription>
+            <CardDescription>Connect Gmail to ingest messages and generate drafts.</CardDescription>
           </CardHeader>
           <CardContent>
             <GmailConnectionPanel />
@@ -38,7 +38,7 @@ export default function SettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Push Notifications</CardTitle>
-            <CardDescription>Subscribe this device to get notified when drafts are ready.</CardDescription>
+            <CardDescription>Get notified when a new draft is ready.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -50,8 +50,8 @@ export default function SettingsPage() {
 
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Context Pack</CardTitle>
-            <CardDescription>Guides keyword prefiltering, summaries, and reply drafts.</CardDescription>
+            <CardTitle>Context</CardTitle>
+            <CardDescription>Used for keyword prefiltering, summaries, and reply drafts.</CardDescription>
           </CardHeader>
           <CardContent>
             <ContextPackForm />

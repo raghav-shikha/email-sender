@@ -19,9 +19,6 @@ export function GmailConnectionPanel() {
   const [row, setRow] = useState<GmailAccountRow | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
-  const redirectUri = apiBase ? `${apiBase}/oauth/google/callback` : "";
-
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -74,19 +71,14 @@ export function GmailConnectionPanel() {
           )}
         </div>
       ) : (
-        <div className="text-sm text-black/60">Not connected yet.</div>
+        <div className="text-sm text-black/60">No Gmail connected yet.</div>
       )}
 
       <GmailConnectButton onStarted={() => setError(null)} />
 
-      <div className="rounded-xl border border-black/10 bg-white/45 p-3 text-xs text-black/55">
-        <div className="font-medium text-black/70">Google OAuth redirect URI</div>
-        <div className="mt-1 leading-relaxed">
-          In Google Cloud Console, add this to <span className="font-medium">Authorized redirect URIs</span>:
-          <div className="mt-2 select-all rounded-lg bg-white/60 px-2 py-1 font-mono text-[11px] text-black/70">
-            {redirectUri || "(set NEXT_PUBLIC_API_BASE_URL first)"}
-          </div>
-        </div>
+      <div className="text-xs text-black/50">
+        You’ll be redirected to Google to grant access. We request read-only + send so you can approve and send replies
+        from inside the app.
       </div>
     </div>
   );
