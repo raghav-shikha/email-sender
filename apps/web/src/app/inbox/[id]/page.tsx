@@ -26,6 +26,7 @@ type EmailItemRow = {
   summary_json: unknown;
   status: string;
   is_relevant: boolean | null;
+  bucket_id: string | null;
 };
 
 type ReplyDraftRow = {
@@ -45,6 +46,7 @@ export default function EmailDetailPage({
 
   const [signedIn, setSignedIn] = useState(false);
   const [item, setItem] = useState<EmailItemRow | null>(null);
+  const [bucketName, setBucketName] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<ReplyDraftRow[]>([]);
   const [draftText, setDraftText] = useState("");
   const [instruction, setInstruction] = useState("");
@@ -63,6 +65,7 @@ export default function EmailDetailPage({
         setSignedIn(false);
         setItem(null);
         setDrafts([]);
+        setBucketName(null);
         return;
       }
 
@@ -71,7 +74,7 @@ export default function EmailDetailPage({
       const { data, error: qErr } = await supabase
         .from("email_items")
         .select(
-          "id,from_email,subject,body_text,summary_json,status,is_relevant",
+          "id,from_email,subject,body_text,summary_json,status,is_relevant,bucket_id",
         )
         .eq("id", params.id)
         .maybeSingle();
@@ -82,7 +85,17 @@ export default function EmailDetailPage({
         return;
       }
 
-      setItem((data as EmailItemRow) || null);
+      const it = (data as EmailItemRow) || null;
+      setItem(it);
+      setBucketName(null);
+      if (it?.bucket_id) {
+        const { data: bData } = await supabase
+          .from("email_buckets")
+          .select("name")
+          .eq("id", it.bucket_id)
+          .maybeSingle();
+        if (alive) setBucketName((bData as any)?.name ?? null);
+      }
 
       const { data: dData, error: dErr } = await supabase
         .from("reply_drafts")
@@ -164,6 +177,7 @@ export default function EmailDetailPage({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  {bucketName ? <Badge>{bucketName}</Badge> : null}
                   <Badge variant={badgeVariantForStatus(item.status)}>
                     {item.status}
                   </Badge>

@@ -15,6 +15,7 @@ from .gmail_client import (
     extract_body_text,
     get_message_full,
     get_profile,
+    list_messages_page,
     list_message_ids,
     parse_from_email,
     parse_received_at,
@@ -24,6 +25,7 @@ from .gmail_client import (
 from .google_oauth import GMAIL_SCOPES, build_google_oauth_url, exchange_code_for_tokens, refresh_access_token
 from .llm import ContextPack, LLMError, revise_draft as llm_revise_draft
 from .models import ReviseRequest, ReviseResponse, SendReplyRequest, SendReplyResponse
+from .buckets import ensure_default_buckets, ensure_default_context_pack
 from .processing import process_ingested_for_account
 from .supabase_rest import SupabaseRest, SupabaseRestError
 
@@ -47,6 +49,22 @@ def get_supabase() -> SupabaseRest:
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/setup/bootstrap")
+async def setup_bootstrap(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    supabase: SupabaseRest = Depends(get_supabase),
+) -> dict[str, Any]:
+    try:
+        user_id = await require_user_id_from_authorization_header(authorization)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+    # Best-effort: create defaults so the web UI can stay simple.
+    await ensure_default_context_pack(supabase=supabase, user_id=user_id)
+    await ensure_default_buckets(supabase=supabase, user_id=user_id)
+    return {"ok": True}
 
 
 @app.get("/oauth/google/start")
@@ -97,6 +115,11 @@ async def oauth_google_callback(code: str, state: str, supabase: SupabaseRest = 
             upsert=True,
             on_conflict="user_id,google_email",
         )
+
+
+        # Initialize defaults on first connect (buckets + context).
+        await ensure_default_context_pack(supabase=supabase, user_id=user_id)
+        await ensure_default_buckets(supabase=supabase, user_id=user_id)
     except SupabaseRestError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
@@ -154,45 +177,71 @@ async def cron_poll_gmail(
             else:
                 after_dt = now - timedelta(hours=1)
 
-            msg_ids = await list_message_ids(access_token=access_token, after_epoch_seconds=int(after_dt.timestamp()))
-            for msg in msg_ids or []:
-                message_id = msg.get("id")
-                if not message_id:
-                    continue
+            q = " ".join(
+                [
+                    "in:inbox",
+                    f"after:{int(after_dt.timestamp())}",
+                    "-category:promotions",
+                    "-category:social",
+                    "-category:forums",
+                ]
+            )
+            page_token: str | None = None
+            fetched = 0
+            max_fetch = 200
 
-                full = await get_message_full(access_token=access_token, message_id=message_id)
-                headers = _extract_headers(full)
-                from_email = parse_from_email(headers.get("from"))
-                subject = headers.get("subject")
-                snippet = full.get("snippet")
-                received_at_dt = parse_received_at(full)
-                body_text = extract_body_text(full)
+            while True:
+                page, page_token = await list_messages_page(
+                    access_token=access_token,
+                    query=q,
+                    max_results=50,
+                    page_token=page_token,
+                )
+                if not page:
+                    break
 
-                row = {
-                    "user_id": user_id,
-                    "gmail_account_id": gmail_account_id,
-                    "gmail_message_id": full.get("id"),
-                    "thread_id": full.get("threadId"),
-                    "from_email": from_email,
-                    "subject": subject,
-                    "snippet": snippet,
-                    "body_text": body_text,
-                    "received_at": (received_at_dt or now).isoformat(),
-                    "status": "ingested",
-                }
+                for msg in page:
+                    message_id = msg.get("id")
+                    if not message_id:
+                        continue
 
-                try:
-                    res = await supabase.insert(
-                        "email_items",
-                        row,
-                        upsert=True,
-                        ignore_duplicates=True,
-                        on_conflict="gmail_account_id,gmail_message_id",
-                    )
-                    inserted += len(res) if isinstance(res, list) else 0
-                except SupabaseRestError as e:
-                    # likely unique conflict or schema issue; record and continue
-                    errors.append(str(e))
+                    full = await get_message_full(access_token=access_token, message_id=message_id)
+                    headers = _extract_headers(full)
+                    from_email = parse_from_email(headers.get("from"))
+                    subject = headers.get("subject")
+                    snippet = full.get("snippet")
+                    received_at_dt = parse_received_at(full)
+                    body_text = extract_body_text(full)
+
+                    row = {
+                        "user_id": user_id,
+                        "gmail_account_id": gmail_account_id,
+                        "gmail_message_id": full.get("id"),
+                        "thread_id": full.get("threadId"),
+                        "from_email": from_email,
+                        "subject": subject,
+                        "snippet": snippet,
+                        "body_text": body_text,
+                        "received_at": (received_at_dt or now).isoformat(),
+                        "status": "ingested",
+                    }
+
+                    try:
+                        res = await supabase.insert(
+                            "email_items",
+                            row,
+                            upsert=True,
+                            ignore_duplicates=True,
+                            on_conflict="gmail_account_id,gmail_message_id",
+                        )
+                        inserted += len(res) if isinstance(res, list) else 0
+                    except SupabaseRestError as e:
+                        # likely unique conflict or schema issue; record and continue
+                        errors.append(str(e))
+
+                fetched += len(page)
+                if not page_token or fetched >= max_fetch:
+                    break
 
             # Process any newly ingested items (AI + push). Best-effort.
             try:

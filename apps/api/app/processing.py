@@ -6,34 +6,28 @@ from typing import Any
 import anyio
 from pywebpush import WebPushException
 
+from .buckets import ensure_default_buckets, route_to_bucket
 from .llm import ContextPack, classify_email, draft_reply, summarize_email
 from .push import send_web_push
 from .supabase_rest import SupabaseRest, SupabaseRestError
 
 
-def _keyword_prefilter(*, keywords: list[str], subject: str | None, snippet: str | None, body_text: str | None) -> bool:
-    if not keywords:
-        return True
-    hay = "\n".join([subject or "", snippet or "", body_text or ""]).lower()
-    for kw in keywords:
-        k = (kw or "").strip().lower()
-        if not k:
-            continue
-        if k in hay:
-            return True
-    return False
+def _one_line_summary(*, summary_json: dict[str, Any] | None, subject: str | None, snippet: str | None) -> str:
+    if summary_json and isinstance(summary_json, dict):
+        bullets = summary_json.get("summary_bullets")
+        if isinstance(bullets, list) and bullets and isinstance(bullets[0], str):
+            s = bullets[0].strip()
+            if s:
+                return s
+        nxt = summary_json.get("suggested_next_step")
+        if isinstance(nxt, str) and nxt.strip():
+            return nxt.strip()
 
-
-def _one_line_summary(summary_json: dict[str, Any]) -> str:
-    bullets = summary_json.get("summary_bullets")
-    if isinstance(bullets, list) and bullets and isinstance(bullets[0], str):
-        s = bullets[0].strip()
-        if s:
-            return s
-    nxt = summary_json.get("suggested_next_step")
-    if isinstance(nxt, str) and nxt.strip():
-        return nxt.strip()
-    return "New relevant email"
+    if subject and subject.strip():
+        return subject.strip()
+    if snippet and snippet.strip():
+        return snippet.strip()
+    return "New email"
 
 
 async def _send_push_to_user(
@@ -104,18 +98,19 @@ async def process_ingested_for_account(
     gmail_account_id: str,
     max_items: int = 25,
 ) -> dict[str, Any]:
-    """
-    Processes ingested email_items: keyword prefilter -> LLM classify -> (if relevant) summary + draft + push.
-    Returns aggregate counts and a list of processing errors.
-    """
-    counts = {
+    """Process ingested emails into: bucket -> classify -> (optional) summary/draft -> (optional) push."""
+
+    counts: dict[str, Any] = {
         "processed": 0,
         "relevant": 0,
         "pushed": 0,
         "failed": 0,
-        "prefiltered_out": 0,
+        "ignored": 0,
     }
     errors: list[str] = []
+
+    # Ensure buckets exist (seed defaults for new users).
+    buckets = await ensure_default_buckets(supabase=supabase, user_id=user_id)
 
     # Load context pack (optional).
     ctx = ContextPack()
@@ -162,23 +157,31 @@ async def process_ingested_for_account(
         snippet = item.get("snippet")
         body_text = item.get("body_text")
 
-        patch: dict[str, Any] = {"error_message": None}
-        is_relevant = False
+        bucket = route_to_bucket(
+            buckets=buckets,
+            from_email=from_email,
+            subject=subject,
+            snippet=snippet,
+            body_text=body_text,
+        )
+        bucket_id = bucket.get("id") if isinstance(bucket, dict) else None
+        actions = (bucket.get("actions") if isinstance(bucket, dict) else None) or {}
+
+        patch: dict[str, Any] = {
+            "error_message": None,
+            "bucket_id": bucket_id,
+        }
+
         try:
-            prefilter_hit = _keyword_prefilter(
-                keywords=ctx.keywords_array or [],
-                subject=subject,
-                snippet=snippet,
-                body_text=body_text,
-            )
-            if not prefilter_hit:
-                counts["prefiltered_out"] += 1
+            # Ignore/noise buckets: store it, but don't spend tokens or send pushes.
+            if bool(actions.get("ignore")):
+                counts["ignored"] += 1
                 patch.update(
                     {
                         "is_relevant": False,
                         "confidence": 0.0,
-                        "category": "prefiltered_out",
-                        "reason": "No keyword match in subject/snippet/body.",
+                        "category": "ignored",
+                        "reason": "Routed to FYI bucket.",
                         "summary_json": None,
                         "status": "processed",
                     }
@@ -187,72 +190,127 @@ async def process_ingested_for_account(
                 counts["processed"] += 1
                 continue
 
-            classification = await classify_email(
-                ctx=ctx,
-                from_email=from_email,
-                subject=subject,
-                snippet=snippet,
-                body_text=body_text,
-            )
-            patch.update(
-                {
-                    "is_relevant": bool(classification.get("is_relevant")),
-                    "confidence": float(classification.get("confidence", 0.0)),
-                    "category": str(classification.get("category") or "unknown"),
-                    "reason": str(classification.get("reason") or ""),
-                }
-            )
+            # LLM classification (per bucket). Defaults to on.
+            if bool(actions.get("llm_classify", True)):
+                classification = await classify_email(
+                    ctx=ctx,
+                    from_email=from_email,
+                    subject=subject,
+                    snippet=snippet,
+                    body_text=body_text,
+                )
+                patch.update(
+                    {
+                        "is_relevant": bool(classification.get("is_relevant")),
+                        "confidence": float(classification.get("confidence", 0.0)),
+                        "category": str(classification.get("category") or "unknown"),
+                        "reason": str(classification.get("reason") or ""),
+                    }
+                )
+            else:
+                patch.update(
+                    {
+                        "is_relevant": True,
+                        "confidence": 1.0,
+                        "category": "bucket_routed",
+                        "reason": "Bucket rule match.",
+                    }
+                )
 
-            is_relevant = bool(classification.get("is_relevant"))
+            is_relevant = bool(patch.get("is_relevant"))
+            confidence = float(patch.get("confidence") or 0.0)
+
             if not is_relevant:
                 patch.update({"summary_json": None, "status": "processed"})
                 await supabase.update("email_items", patch, filters={"id": f"eq.{email_item_id}"})
                 counts["processed"] += 1
                 continue
 
-            summary = await summarize_email(ctx=ctx, from_email=from_email, subject=subject, body_text=body_text)
-            draft = await draft_reply(
-                ctx=ctx,
-                from_email=from_email,
-                subject=subject,
-                body_text=body_text,
-                summary_json=summary,
-            )
+            summary: dict[str, Any] | None = None
+            if bool(actions.get("llm_summarize", True)):
+                summary = await summarize_email(ctx=ctx, from_email=from_email, subject=subject, body_text=body_text)
+                patch["summary_json"] = summary
 
-            # Insert draft version (append-only).
-            existing = await supabase.select(
-                "reply_drafts",
-                columns="version",
-                filters={"email_item_id": f"eq.{email_item_id}"},
-                order="version.desc",
-                limit=1,
-            )
-            next_version = (existing[0]["version"] if existing else 0) + 1
-            await supabase.insert(
-                "reply_drafts",
-                {
-                    "email_item_id": email_item_id,
-                    "version": next_version,
-                    "draft_text": str(draft.get("draft_text") or "").strip(),
-                    "instruction": None,
-                },
-            )
+            # Draft can be gated by confidence (useful for the fallback bucket).
+            draft_min_conf = actions.get("draft_min_confidence")
+            if draft_min_conf is None:
+                draft_min_conf = 0.0
+            try:
+                draft_min_conf_f = float(draft_min_conf)
+            except Exception:
+                draft_min_conf_f = 0.0
 
-            patch.update({"summary_json": summary, "status": "needs_review"})
+            did_draft = False
+            if bool(actions.get("llm_draft", True)) and confidence >= draft_min_conf_f:
+                draft = await draft_reply(
+                    ctx=ctx,
+                    from_email=from_email,
+                    subject=subject,
+                    body_text=body_text,
+                    summary_json=summary
+                    or {
+                        "summary_bullets": ["(no summary)"],
+                        "what_they_want": ["(unknown)"],
+                        "suggested_next_step": "Reply if needed.",
+                    },
+                )
+
+                # Insert draft version (append-only).
+                existing = await supabase.select(
+                    "reply_drafts",
+                    columns="version",
+                    filters={"email_item_id": f"eq.{email_item_id}"},
+                    order="version.desc",
+                    limit=1,
+                )
+                next_version = (existing[0]["version"] if existing else 0) + 1
+                await supabase.insert(
+                    "reply_drafts",
+                    {
+                        "email_item_id": email_item_id,
+                        "version": next_version,
+                        "draft_text": str(draft.get("draft_text") or "").strip(),
+                        "instruction": None,
+                    },
+                )
+                did_draft = True
+
+            patch.update({"status": "needs_review"})
             await supabase.update("email_items", patch, filters={"id": f"eq.{email_item_id}"})
 
             counts["processed"] += 1
             counts["relevant"] += 1
 
             # Best-effort push (do not fail item if push fails).
-            pushed = await _send_push_to_user(
-                supabase=supabase,
-                user_id=user_id,
-                email_item_id=email_item_id,
-                from_email=from_email,
-                one_line=_one_line_summary(summary),
-            )
-            counts["pushed"] += pushed
+            push_min_conf = actions.get("push_min_confidence")
+            if push_min_conf is None:
+                push_min_conf = 0.0
+            try:
+                push_min_conf_f = float(push_min_conf)
+            except Exception:
+                push_min_conf_f = 0.0
+
+            if bool(actions.get("push", True)) and confidence >= push_min_conf_f:
+                pushed = await _send_push_to_user(
+                    supabase=supabase,
+                    user_id=user_id,
+                    email_item_id=email_item_id,
+                    from_email=from_email,
+                    one_line=_one_line_summary(summary_json=summary, subject=subject, snippet=snippet),
+                )
+                counts["pushed"] += pushed
+
+            # If we created no draft and we also didn't summarize, keep the status accurate.
+            if not did_draft and not summary:
+                try:
+                    await supabase.update(
+                        "email_items",
+                        {"status": "processed"},
+                        filters={"id": f"eq.{email_item_id}"},
+                    )
+                except Exception:
+                    pass
+
         except Exception as e:
             counts["failed"] += 1
             msg = str(e)
@@ -264,4 +322,3 @@ async def process_ingested_for_account(
                 pass
 
     return {"counts": counts, "errors": errors}
-

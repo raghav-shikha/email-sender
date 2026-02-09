@@ -33,16 +33,37 @@ async def get_profile(*, access_token: str) -> GmailProfile:
     return GmailProfile(email_address=email_address)
 
 
-async def list_message_ids(*, access_token: str, after_epoch_seconds: int, max_results: int = 50) -> list[dict[str, str]]:
-    params = {
-        "q": f"after:{after_epoch_seconds}",
+async def list_messages_page(
+    *,
+    access_token: str,
+    query: str,
+    max_results: int = 50,
+    page_token: str | None = None,
+) -> tuple[list[dict[str, str]], str | None]:
+    params: dict[str, str] = {
+        "q": query,
         "maxResults": str(max_results),
     }
+    if page_token:
+        params["pageToken"] = page_token
+
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(f"{GMAIL_API_BASE}/users/me/messages", headers=_auth_headers(access_token), params=params)
+        resp = await client.get(
+            f"{GMAIL_API_BASE}/users/me/messages",
+            headers=_auth_headers(access_token),
+            params=params,
+        )
     resp.raise_for_status()
     j = resp.json()
-    return j.get("messages", []) or []
+    messages = j.get("messages", []) or []
+    next_token = j.get("nextPageToken")
+    return messages, next_token
+
+
+async def list_message_ids(*, access_token: str, after_epoch_seconds: int, max_results: int = 50) -> list[dict[str, str]]:
+    # Backward-compatible helper (single page).
+    msgs, _ = await list_messages_page(access_token=access_token, query=f"after:{after_epoch_seconds}", max_results=max_results)
+    return msgs
 
 
 async def get_message_full(*, access_token: str, message_id: str) -> dict[str, Any]:

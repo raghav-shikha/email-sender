@@ -8,8 +8,10 @@ import { ContinueWithGoogleButton } from "@/components/ContinueWithGoogleButton"
 import { GmailConnectButton } from "@/components/GmailConnectButton";
 import { PushEnableButton } from "@/components/PushEnableButton";
 import { ContextPackForm } from "@/components/ContextPackForm";
+import { BucketEditor } from "@/components/BucketEditor";
 import { Alert } from "@/components/ui/Alert";
 import { Badge } from "@/components/ui/Badge";
+import { TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/Button";
 import { ButtonLink } from "@/components/ui/ButtonLink";
 import {
@@ -51,6 +53,7 @@ function SetupClient() {
   const [gmailChecked, setGmailChecked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoStarted, setAutoStarted] = useState(false);
+  const [prefsTab, setPrefsTab] = useState<"context" | "buckets">("context");
 
   useEffect(() => {
     let alive = true;
@@ -260,13 +263,33 @@ function SetupClient() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Context (optional)</CardTitle>
+                <CardTitle>Preferences (optional)</CardTitle>
                 <CardDescription>
-                  Improves relevance and the quality of drafts.
+                  Buckets are preconfigured for a solo founder or COO. Customize
+                  if you want.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <ContextPackForm />
+              <CardContent className="space-y-4">
+                <TabsList>
+                  <TabsTrigger
+                    active={prefsTab === "context"}
+                    onClick={() => setPrefsTab("context")}
+                  >
+                    Context
+                  </TabsTrigger>
+                  <TabsTrigger
+                    active={prefsTab === "buckets"}
+                    onClick={() => setPrefsTab("buckets")}
+                  >
+                    Buckets
+                  </TabsTrigger>
+                </TabsList>
+
+                {prefsTab === "context" ? (
+                  <ContextPackForm />
+                ) : (
+                  <BucketEditor />
+                )}
               </CardContent>
             </Card>
           </div>

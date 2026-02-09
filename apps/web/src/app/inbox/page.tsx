@@ -3,11 +3,18 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
+import { useSupabaseSession } from "@/lib/useSupabaseSession";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Badge } from "@/components/ui/Badge";
 import { ButtonLink } from "@/components/ui/ButtonLink";
+
+type BucketRow = {
+  id: string;
+  slug: string;
+  name: string;
+  priority: number;
+};
 
 type EmailItemRow = {
   id: string;
@@ -17,122 +24,164 @@ type EmailItemRow = {
   received_at: string | null;
   is_relevant: boolean | null;
   status: string;
+  bucket_id: string | null;
 };
 
-type TabKey = "relevant" | "all" | "sent" | "needs_review";
+type ViewKey = "needs_review" | "sent" | "all";
 
 export default function InboxPage() {
-  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
-  const [signedIn, setSignedIn] = useState<boolean>(false);
-  const [tab, setTab] = useState<TabKey>("relevant");
+  const { supabase, session } = useSupabaseSession();
+
+  const [view, setView] = useState<ViewKey>("needs_review");
+  const [bucketId, setBucketId] = useState<string>("all");
+
+  const [buckets, setBuckets] = useState<BucketRow[]>([]);
   const [items, setItems] = useState<EmailItemRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
+
     (async () => {
       setLoading(true);
       setError(null);
 
-      const sessionRes = await supabase.auth.getSession();
-      const session = sessionRes.data.session;
       if (!session) {
         if (!alive) return;
-        setSignedIn(false);
+        setBuckets([]);
         setItems([]);
         setLoading(false);
         return;
       }
 
-      setSignedIn(true);
-
-      const { data, error: qErr } = await supabase
-        .from("email_items")
-        .select("id,from_email,subject,snippet,received_at,is_relevant,status")
-        .order("received_at", { ascending: false })
-        .limit(100);
+      const [{ data: bData, error: bErr }, { data: iData, error: iErr }] =
+        await Promise.all([
+          supabase
+            .from("email_buckets")
+            .select("id,slug,name,priority")
+            .order("priority", { ascending: true })
+            .limit(100),
+          supabase
+            .from("email_items")
+            .select(
+              "id,from_email,subject,snippet,received_at,is_relevant,status,bucket_id",
+            )
+            .order("received_at", { ascending: false })
+            .limit(200),
+        ]);
 
       if (!alive) return;
-      if (qErr) setError(qErr.message);
-      setItems((data as EmailItemRow[]) || []);
+
+      if (bErr) setError(bErr.message);
+      else setBuckets(((bData as any[]) || []) as BucketRow[]);
+
+      if (iErr) setError(iErr.message);
+      else setItems(((iData as any[]) || []) as EmailItemRow[]);
+
       setLoading(false);
     })();
 
     return () => {
       alive = false;
     };
-  }, [supabase]);
+  }, [session, supabase]);
+
+  const bucketById = useMemo(() => {
+    const m = new Map<string, BucketRow>();
+    for (const b of buckets) m.set(b.id, b);
+    return m;
+  }, [buckets]);
 
   const filtered = useMemo(() => {
-    if (tab === "all") return items;
-    if (tab === "relevant") return items.filter((i) => i.is_relevant === true);
-    if (tab === "sent") return items.filter((i) => i.status === "sent");
-    return items.filter((i) => i.status === "needs_review");
-  }, [items, tab]);
+    let list = items;
+
+    if (view === "needs_review") {
+      list = list.filter(
+        (i) => i.status === "needs_review" || i.status === "failed",
+      );
+    } else if (view === "sent") {
+      list = list.filter((i) => i.status === "sent");
+    }
+
+    if (bucketId !== "all") {
+      list = list.filter((i) => i.bucket_id === bucketId);
+    }
+
+    return list;
+  }, [items, view, bucketId]);
 
   return (
     <div className="space-y-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
-          <p className="text-sm text-black/60">
-            Relevant items generate a draft and a push notification.
-          </p>
-        </div>
+      <header className="space-y-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
+        <p className="text-sm text-black/60">
+          The app ingests new inbox emails, routes them into buckets, and drafts
+          replies for anything relevant.
+        </p>
       </header>
 
-      {!signedIn ? (
+      {!session ? (
         <Card>
           <CardContent className="space-y-3">
             <div className="text-sm font-semibold">
               Sign in to view your inbox
             </div>
             <div className="text-sm text-black/60">
-              Connect Gmail in Setup, then run the poll to ingest messages.
+              Start in setup, then link Gmail.
             </div>
-            <div>
-              <ButtonLink href="/setup" variant="secondary">
-                Go to Setup
-              </ButtonLink>
-            </div>
+            <ButtonLink href="/setup" variant="secondary">
+              Open setup
+            </ButtonLink>
           </CardContent>
         </Card>
       ) : null}
 
-      {signedIn ? (
+      {session ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-xs font-medium text-black/55">Bucket</div>
+            <select
+              className="h-9 rounded-xl border border-black/10 bg-white/60 px-3 text-sm text-black/80 shadow-sm outline-none backdrop-blur-xl transition focus:border-black/20"
+              value={bucketId}
+              onChange={(e) => setBucketId(e.target.value)}
+            >
+              <option value="all">All buckets</option>
+              {buckets.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <TabsList>
             <TabsTrigger
-              active={tab === "relevant"}
-              onClick={() => setTab("relevant")}
-            >
-              Relevant
-            </TabsTrigger>
-            <TabsTrigger
-              active={tab === "needs_review"}
-              onClick={() => setTab("needs_review")}
+              active={view === "needs_review"}
+              onClick={() => setView("needs_review")}
             >
               Needs review
             </TabsTrigger>
-            <TabsTrigger active={tab === "sent"} onClick={() => setTab("sent")}>
+            <TabsTrigger
+              active={view === "sent"}
+              onClick={() => setView("sent")}
+            >
               Sent
             </TabsTrigger>
-            <TabsTrigger active={tab === "all"} onClick={() => setTab("all")}>
+            <TabsTrigger active={view === "all"} onClick={() => setView("all")}>
               All
             </TabsTrigger>
           </TabsList>
-
-          <div className="text-xs text-black/50">
-            Showing {filtered.length} items
-          </div>
         </div>
       ) : null}
 
-      {signedIn ? (
+      {session ? (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Messages</CardTitle>
+            <div className="text-xs text-black/50">
+              Showing {filtered.length}
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             {loading ? (
@@ -151,44 +200,54 @@ export default function InboxPage() {
             ) : null}
 
             <ul className="divide-y divide-black/5">
-              {filtered.map((item) => (
-                <li
-                  key={item.id}
-                  className="px-5 py-4 transition hover:bg-white/50"
-                >
-                  <Link href={`/inbox/${item.id}`} className="block">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="space-y-1">
-                        <div className="text-sm font-semibold tracking-tight">
-                          {item.subject || (
-                            <span className="text-black/40">(no subject)</span>
-                          )}
-                        </div>
-                        <div className="text-xs text-black/55">
-                          {item.from_email || "(unknown sender)"}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={badgeVariantForStatus(item.status)}>
-                          {item.status}
-                        </Badge>
-                        {item.is_relevant === true ? (
-                          <Badge variant="info">relevant</Badge>
-                        ) : null}
-                        <div className="text-xs text-black/45">
-                          {formatDate(item.received_at)}
-                        </div>
-                      </div>
-                    </div>
+              {filtered.map((item) => {
+                const bucketName = item.bucket_id
+                  ? bucketById.get(item.bucket_id)?.name
+                  : null;
 
-                    {item.snippet ? (
-                      <div className="mt-2 line-clamp-2 text-sm text-black/60">
-                        {item.snippet}
+                return (
+                  <li
+                    key={item.id}
+                    className="px-5 py-4 transition hover:bg-white/50"
+                  >
+                    <Link href={`/inbox/${item.id}`} className="block">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="text-sm font-semibold tracking-tight">
+                            {item.subject || (
+                              <span className="text-black/40">
+                                (no subject)
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-black/55">
+                            {item.from_email || "(unknown sender)"}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {bucketName ? <Badge>{bucketName}</Badge> : null}
+                          <Badge variant={badgeVariantForStatus(item.status)}>
+                            {item.status}
+                          </Badge>
+                          {item.is_relevant === true ? (
+                            <Badge variant="info">relevant</Badge>
+                          ) : null}
+                          <div className="text-xs text-black/45">
+                            {formatDate(item.received_at)}
+                          </div>
+                        </div>
                       </div>
-                    ) : null}
-                  </Link>
-                </li>
-              ))}
+
+                      {item.snippet ? (
+                        <div className="mt-2 line-clamp-2 text-sm text-black/60">
+                          {item.snippet}
+                        </div>
+                      ) : null}
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
           </CardContent>
         </Card>

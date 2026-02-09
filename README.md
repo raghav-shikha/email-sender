@@ -12,7 +12,7 @@ Monorepo for:
 ### 1) Supabase
 
 1. Create a Supabase project.
-2. Run the SQL in `supabase/migrations/0001_init.sql` in the Supabase SQL editor.
+2. Run the SQL in all files under `supabase/migrations/` (currently `0001_init.sql` and `0002_buckets.sql`) in the Supabase SQL editor.
 3. Grab env vars:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
