@@ -6,8 +6,8 @@ import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 import { Button } from "@/components/ui/Button";
 
 export function ContinueWithGoogleButton({
-  redirectPath = "/setup",
-  label = "Continue with Google"
+  redirectPath = "/setup?autoconnect=1",
+  label = "Continue with Google",
 }: {
   redirectPath?: string;
   label?: string;
@@ -28,11 +28,15 @@ export function ContinueWithGoogleButton({
             const redirectTo = `${window.location.origin}${redirectPath}`;
             const { error } = await supabase.auth.signInWithOAuth({
               provider: "google",
-              options: { redirectTo }
+              options: { redirectTo },
             });
             if (error) setError(error.message);
           } catch (e: unknown) {
-            setError(e instanceof Error ? e.message : "Failed to start Google sign-in.");
+            setError(
+              e instanceof Error
+                ? e.message
+                : "Failed to start Google sign-in.",
+            );
           } finally {
             setBusy(false);
           }

@@ -76,21 +76,24 @@ export default function InboxPage() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
-          <p className="text-sm text-black/60">Relevant items generate a draft and a push notification.</p>
+          <p className="text-sm text-black/60">
+            Relevant items generate a draft and a push notification.
+          </p>
         </div>
-        <ButtonLink href="/setup" variant="secondary" size="sm">
-          Settings
-        </ButtonLink>
       </header>
 
       {!signedIn ? (
         <Card>
           <CardContent className="space-y-3">
-            <div className="text-sm font-semibold">Sign in to view your inbox</div>
-            <div className="text-sm text-black/60">Connect Gmail in Settings, then run the poll to ingest messages.</div>
+            <div className="text-sm font-semibold">
+              Sign in to view your inbox
+            </div>
+            <div className="text-sm text-black/60">
+              Connect Gmail in Setup, then run the poll to ingest messages.
+            </div>
             <div>
               <ButtonLink href="/setup" variant="secondary">
-                Go to Settings
+                Go to Setup
               </ButtonLink>
             </div>
           </CardContent>
@@ -100,10 +103,16 @@ export default function InboxPage() {
       {signedIn ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <TabsList>
-            <TabsTrigger active={tab === "relevant"} onClick={() => setTab("relevant")}>
+            <TabsTrigger
+              active={tab === "relevant"}
+              onClick={() => setTab("relevant")}
+            >
               Relevant
             </TabsTrigger>
-            <TabsTrigger active={tab === "needs_review"} onClick={() => setTab("needs_review")}>
+            <TabsTrigger
+              active={tab === "needs_review"}
+              onClick={() => setTab("needs_review")}
+            >
               Needs review
             </TabsTrigger>
             <TabsTrigger active={tab === "sent"} onClick={() => setTab("sent")}>
@@ -114,7 +123,9 @@ export default function InboxPage() {
             </TabsTrigger>
           </TabsList>
 
-          <div className="text-xs text-black/50">Showing {filtered.length} items</div>
+          <div className="text-xs text-black/50">
+            Showing {filtered.length} items
+          </div>
         </div>
       ) : null}
 
@@ -124,33 +135,56 @@ export default function InboxPage() {
             <CardTitle>Messages</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            {loading ? <div className="px-5 pb-5 text-sm text-black/60">Loading…</div> : null}
-            {error ? <div className="px-5 pb-5 text-sm text-red-700">Error: {error}</div> : null}
+            {loading ? (
+              <div className="px-5 pb-5 text-sm text-black/60">Loading…</div>
+            ) : null}
+            {error ? (
+              <div className="px-5 pb-5 text-sm text-red-700">
+                Error: {error}
+              </div>
+            ) : null}
 
             {!loading && !error && filtered.length === 0 ? (
-              <div className="px-5 pb-5 text-sm text-black/60">No items yet.</div>
+              <div className="px-5 pb-5 text-sm text-black/60">
+                No items yet.
+              </div>
             ) : null}
 
             <ul className="divide-y divide-black/5">
               {filtered.map((item) => (
-                <li key={item.id} className="px-5 py-4 transition hover:bg-white/50">
+                <li
+                  key={item.id}
+                  className="px-5 py-4 transition hover:bg-white/50"
+                >
                   <Link href={`/inbox/${item.id}`} className="block">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="space-y-1">
                         <div className="text-sm font-semibold tracking-tight">
-                          {item.subject || <span className="text-black/40">(no subject)</span>}
+                          {item.subject || (
+                            <span className="text-black/40">(no subject)</span>
+                          )}
                         </div>
-                        <div className="text-xs text-black/55">{item.from_email || "(unknown sender)"}</div>
+                        <div className="text-xs text-black/55">
+                          {item.from_email || "(unknown sender)"}
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant={badgeVariantForStatus(item.status)}>{item.status}</Badge>
-                        {item.is_relevant === true ? <Badge variant="info">relevant</Badge> : null}
-                        <div className="text-xs text-black/45">{formatDate(item.received_at)}</div>
+                        <Badge variant={badgeVariantForStatus(item.status)}>
+                          {item.status}
+                        </Badge>
+                        {item.is_relevant === true ? (
+                          <Badge variant="info">relevant</Badge>
+                        ) : null}
+                        <div className="text-xs text-black/45">
+                          {formatDate(item.received_at)}
+                        </div>
                       </div>
                     </div>
 
                     {item.snippet ? (
-                      <div className="mt-2 line-clamp-2 text-sm text-black/60">{item.snippet}</div>
+                      <div className="mt-2 line-clamp-2 text-sm text-black/60">
+                        {item.snippet}
+                      </div>
                     ) : null}
                   </Link>
                 </li>

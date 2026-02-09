@@ -42,7 +42,7 @@ export function GmailConnectButton({ onStarted }: { onStarted?: () => void }) {
           }
         }}
       >
-        Connect Gmail
+        Grant Gmail access
       </Button>
 
       {error ? <div className="text-xs text-red-700">{error}</div> : null}
