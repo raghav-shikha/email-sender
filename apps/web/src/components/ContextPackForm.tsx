@@ -26,6 +26,7 @@ export function ContextPackForm() {
     keywords_array: []
   });
   const [keywords, setKeywords] = useState("");
+  const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string>("");
 
@@ -61,7 +62,7 @@ export function ContextPackForm() {
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1">
-          <Label>Brand name</Label>
+          <Label>Brand</Label>
           <Input
             value={row.brand_name ?? ""}
             onChange={(e) => setRow((r) => ({ ...r, brand_name: e.target.value }))}
@@ -70,46 +71,56 @@ export function ContextPackForm() {
         </div>
 
         <div className="space-y-1">
-          <Label>Tone</Label>
+          <Label>Keywords</Label>
           <Input
-            placeholder='e.g. "concise, warm, professional"'
-            value={row.tone ?? ""}
-            onChange={(e) => setRow((r) => ({ ...r, tone: e.target.value }))}
+            value={keywords}
+            onChange={(e) => setKeywords(e.target.value)}
+            placeholder="pricing, invoice, partnership, demo"
           />
-        </div>
-
-        <div className="space-y-1 md:col-span-2">
-          <Label>Brand blurb</Label>
-          <Textarea
-            rows={4}
-            value={row.brand_blurb ?? ""}
-            onChange={(e) => setRow((r) => ({ ...r, brand_blurb: e.target.value }))}
-            placeholder="A 2-4 sentence description of what you do and who you serve."
-          />
+          <div className="text-xs text-black/45">Used as a fast prefilter before the LLM.</div>
         </div>
 
         <div className="space-y-1 md:col-span-2">
           <Label>Signature</Label>
           <Textarea
-            rows={4}
-            placeholder="Best,\nName\nCompany"
+            rows={3}
+            placeholder="Best,\nRaghav"
             value={row.signature ?? ""}
             onChange={(e) => setRow((r) => ({ ...r, signature: e.target.value }))}
           />
         </div>
+      </div>
 
-        <div className="space-y-1 md:col-span-2">
-          <Label>Keywords (comma-separated)</Label>
-          <Input
-            value={keywords}
-            onChange={(e) => setKeywords(e.target.value)}
-            placeholder="quote, invoice, pricing, MOQ"
-          />
-          <div className="text-xs text-black/50">
-            These are used as a fast prefilter before the LLM classification.
+      <button
+        type="button"
+        className="text-left text-xs font-medium text-black/50 underline decoration-black/20 underline-offset-4 hover:text-black/65"
+        onClick={() => setAdvanced((v) => !v)}
+      >
+        {advanced ? "Hide advanced" : "Advanced"}
+      </button>
+
+      {advanced ? (
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-1">
+            <Label>Tone</Label>
+            <Input
+              placeholder="concise, warm, professional"
+              value={row.tone ?? ""}
+              onChange={(e) => setRow((r) => ({ ...r, tone: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-1 md:col-span-2">
+            <Label>Brand blurb</Label>
+            <Textarea
+              rows={4}
+              value={row.brand_blurb ?? ""}
+              onChange={(e) => setRow((r) => ({ ...r, brand_blurb: e.target.value }))}
+              placeholder="1-3 sentences about what you do."
+            />
           </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <Button
