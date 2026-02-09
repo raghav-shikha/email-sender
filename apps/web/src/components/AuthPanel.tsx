@@ -3,18 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
+import { ContinueWithGoogleButton } from "@/components/ContinueWithGoogleButton";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Label } from "@/components/ui/Label";
 
-export function AuthPanel() {
+export function AuthPanel({ redirectPath }: { redirectPath?: string }) {
   const supabase = useMemo(() => getSupabaseBrowserClient(), []);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string>("");
   const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [showPasswordAuth, setShowPasswordAuth] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -34,144 +29,36 @@ export function AuthPanel() {
     };
   }, [supabase]);
 
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm text-black/70">
-          {userEmail ? (
-            <>
-              Signed in as <span className="font-medium text-black/85">{userEmail}</span>
-            </>
-          ) : (
-            "Sign in to continue"
-          )}
-        </div>
-
-        {userEmail ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={busy}
-            onClick={async () => {
-              setBusy(true);
-              setStatus("");
-              try {
-                const { error } = await supabase.auth.signOut();
-                if (error) setStatus(error.message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Sign out
-          </Button>
-        ) : null}
+  if (!userEmail) {
+    return (
+      <div className="space-y-2">
+        <div className="text-sm text-black/60">Sign in to connect Gmail and save your setup.</div>
+        <ContinueWithGoogleButton redirectPath={redirectPath} />
+        <div className="text-xs text-black/45">You can revoke access any time from your Google account settings.</div>
       </div>
+    );
+  }
 
-      {!userEmail ? (
-        <div className="space-y-3">
-          <Button
-            type="button"
-            loading={busy}
-            onClick={async () => {
-              setBusy(true);
-              setStatus("");
-              try {
-                const redirectTo = `${window.location.origin}/settings`;
-                const { error } = await supabase.auth.signInWithOAuth({
-                  provider: "google",
-                  options: { redirectTo }
-                });
-                if (error) setStatus(error.message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Continue with Google
-          </Button>
-
-          <button
-            type="button"
-            className="text-left text-xs font-medium text-black/50 underline decoration-black/20 underline-offset-4 hover:text-black/65"
-            onClick={() => setShowPasswordAuth((v) => !v)}
-          >
-            {showPasswordAuth ? "Hide email/password" : "Use email/password instead"}
-          </button>
-
-          {showPasswordAuth ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1">
-                <Label htmlFor="auth-email">Email</Label>
-                <Input
-                  id="auth-email"
-                  placeholder="you@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  type="email"
-                  autoComplete="email"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="auth-password">Password</Label>
-                <Input
-                  id="auth-password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  type="password"
-                  autoComplete="current-password"
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-2 md:col-span-2">
-                <Button
-                  type="button"
-                  loading={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    setStatus("");
-                    try {
-                      const { error } = await supabase.auth.signInWithPassword({ email, password });
-                      if (error) setStatus(error.message);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Sign in
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="secondary"
-                  loading={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    setStatus("");
-                    try {
-                      const { error } = await supabase.auth.signUp({ email, password });
-                      if (error) setStatus(error.message);
-                      else setStatus("Check your email to confirm (if confirmation is enabled).");
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Sign up
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {status ? <div className="text-xs text-black/60">{status}</div> : null}
-        </div>
-      ) : (
-        <div className="text-xs text-black/60">
-          You can now connect Gmail and enable push on this device.
-        </div>
-      )}
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="text-sm text-black/70">
+        Signed in as <span className="font-medium text-black/85">{userEmail}</span>
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        loading={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await supabase.auth.signOut();
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        Sign out
+      </Button>
     </div>
   );
 }

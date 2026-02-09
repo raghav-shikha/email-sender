@@ -78,7 +78,7 @@ export default function InboxPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
           <p className="text-sm text-black/60">Relevant items generate a draft and a push notification.</p>
         </div>
-        <ButtonLink href="/settings" variant="secondary" size="sm">
+        <ButtonLink href="/setup" variant="secondary" size="sm">
           Settings
         </ButtonLink>
       </header>
@@ -89,7 +89,7 @@ export default function InboxPage() {
             <div className="text-sm font-semibold">Sign in to view your inbox</div>
             <div className="text-sm text-black/60">Connect Gmail in Settings, then run the poll to ingest messages.</div>
             <div>
-              <ButtonLink href="/settings" variant="secondary">
+              <ButtonLink href="/setup" variant="secondary">
                 Go to Settings
               </ButtonLink>
             </div>

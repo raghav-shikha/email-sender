@@ -1,82 +1,91 @@
-import Link from "next/link";
+"use client";
 
-import { Card, CardContent } from "@/components/ui/Card";
+import { useEffect, useMemo, useState } from "react";
+
+import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
+import { ContinueWithGoogleButton } from "@/components/ContinueWithGoogleButton";
 import { Badge } from "@/components/ui/Badge";
 import { ButtonLink } from "@/components/ui/ButtonLink";
+import { Card, CardContent } from "@/components/ui/Card";
 
 export default function HomePage() {
+  const supabase = useMemo(() => getSupabaseBrowserClient(), []);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!alive) return;
+      setUserEmail(data.user?.email ?? null);
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+      setUserEmail(session?.user?.email ?? null);
+    });
+
+    return () => {
+      alive = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
   return (
     <div className="space-y-10">
-      <section className="space-y-6">
+      <section className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="info">PWA + Push</Badge>
+          <Badge variant="info">Gmail</Badge>
           <Badge>Hourly poll</Badge>
           <Badge>Manual send only</Badge>
         </div>
 
-        <div className="space-y-3">
-          <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-            Clear the inbox.
-            <span className="text-black/55"> Keep control.</span>
-          </h1>
+        <div className="space-y-2">
+          <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">Inbox Copilot</h1>
           <p className="max-w-2xl text-base leading-relaxed text-black/60">
-            Inbox Copilot polls Gmail, flags business-relevant emails, generates a structured summary and a suggested
-            reply, and nudges you with a push notification.
-            <span className="font-medium text-black/70"> You approve every send.</span>
+            Business-only summaries and reply drafts, delivered by push. You approve everything before it’s sent.
           </p>
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          <ButtonLink href="/inbox">Open Inbox</ButtonLink>
-          <ButtonLink href="/settings" variant="secondary">
-            Connect Gmail
-          </ButtonLink>
-        </div>
-
-        <p className="text-sm text-black/50">
-          Tip: iOS push requires Add to Home Screen (iOS 16.4+). Enable push from the installed app.
-        </p>
       </section>
+
+      {!userEmail ? (
+        <Card>
+          <CardContent className="space-y-3">
+            <div className="text-sm font-semibold tracking-tight">Get started</div>
+            <div className="text-sm text-black/60">Sign in with Google, then connect Gmail.</div>
+            <ContinueWithGoogleButton redirectPath="/setup" label="Sign up with Gmail" />
+            <div className="text-xs text-black/45">We’ll ask for Gmail read + send after sign-in.</div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="space-y-3">
+            <div className="text-sm text-black/70">
+              Signed in as <span className="font-medium text-black/85">{userEmail}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <ButtonLink href="/setup">Continue setup</ButtonLink>
+              <ButtonLink href="/inbox" variant="secondary">
+                Open inbox
+              </ButtonLink>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <section className="grid gap-3 md:grid-cols-3">
-        <FeatureCard
-          title="Business relevance"
-          body="Keyword prefilter + LLM classification so you only get pinged for what matters."
-        />
-        <FeatureCard
-          title="Structured summary"
-          body="What they want, key bullets, and next step. Built for quick scanning."
-        />
-        <FeatureCard
-          title="Reply drafts"
-          body="Drafts are editable, versioned, and never sent without your explicit approval."
-        />
-      </section>
-
-      <section className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-black/60">
-          New here? Start in <Link className="font-medium text-black/80 underline" href="/settings">Settings</Link>.
-        </div>
-        <div className="flex gap-2">
-          <ButtonLink href="/settings" variant="secondary" size="sm">
-            Settings
-          </ButtonLink>
-          <ButtonLink href="/inbox" size="sm">
-            Inbox
-          </ButtonLink>
-        </div>
+        <MiniFeature title="Relevance" body="Keyword prefilter + LLM classification." />
+        <MiniFeature title="Structure" body="Summary bullets, what they want, next step." />
+        <MiniFeature title="Control" body="Drafts are editable. Nothing auto-sends." />
       </section>
     </div>
   );
 }
 
-function FeatureCard({ title, body }: { title: string; body: string }) {
+function MiniFeature({ title, body }: { title: string; body: string }) {
   return (
-    <Card className="hover:bg-white/60">
-      <CardContent className="space-y-2">
-        <div className="text-sm font-semibold tracking-tight">{title}</div>
-        <div className="text-sm leading-relaxed text-black/60">{body}</div>
-      </CardContent>
-    </Card>
+    <div className="rounded-2xl border border-black/10 bg-white/45 p-4 text-sm text-black/60 backdrop-blur-xl">
+      <div className="text-sm font-semibold tracking-tight text-black/80">{title}</div>
+      <div className="mt-1 leading-relaxed">{body}</div>
+    </div>
   );
 }

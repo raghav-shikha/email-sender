@@ -6,12 +6,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { getSupabaseBrowserClient } from "@/lib/supabaseBrowser";
 import { cn } from "@/lib/cn";
-import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { ButtonLink } from "@/components/ui/ButtonLink";
 
 const NAV = [
   { href: "/inbox", label: "Inbox" },
-  { href: "/settings", label: "Settings" }
+  { href: "/setup", label: "Setup" }
 ] as const;
 
 export function TopNav() {
@@ -72,28 +72,9 @@ export function TopNav() {
 
         <div className="flex items-center gap-2">
           {userEmail ? <Badge className="hidden md:inline-flex">{userEmail}</Badge> : null}
-
-          {userEmail ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={async () => {
-                await supabase.auth.signOut();
-                window.location.href = "/";
-              }}
-            >
-              Sign out
-            </Button>
-          ) : (
-            <Link
-              href="/settings"
-              className={
-                "inline-flex h-9 items-center justify-center rounded-xl border border-black/10 bg-white/55 px-3 text-sm font-medium text-black/80 shadow-[0_1px_0_rgba(255,255,255,0.75)_inset,0_12px_30px_rgba(11,18,32,0.08)] backdrop-blur-xl transition hover:bg-white/65 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
-              }
-            >
-              Sign in
-            </Link>
-          )}
+          <ButtonLink href="/setup" variant="secondary" size="sm">
+            {userEmail ? "Setup" : "Get started"}
+          </ButtonLink>
         </div>
       </div>
 

@@ -101,7 +101,7 @@ async def oauth_google_callback(code: str, state: str, supabase: SupabaseRest = 
         raise HTTPException(status_code=500, detail=str(e)) from e
 
     # Redirect back to web settings
-    dest = settings.web_base_url.rstrip("/") + "/settings?gmail=connected"
+    dest = settings.web_base_url.rstrip("/") + "/setup?gmail=connected"
     return RedirectResponse(url=dest, status_code=302)
 
 

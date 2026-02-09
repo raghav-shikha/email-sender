@@ -112,7 +112,7 @@ export default function EmailDetailPage({ params }: { params: { id: string } }) 
             <div className="text-sm font-semibold">Sign in to view this email</div>
             <div className="text-sm text-black/60">Go to Settings to sign in, connect Gmail, and enable push.</div>
             <div>
-              <ButtonLink href="/settings" variant="secondary">
+              <ButtonLink href="/setup" variant="secondary">
                 Go to Settings
               </ButtonLink>
             </div>
