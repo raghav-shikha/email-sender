@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { useSupabaseSession } from "@/lib/useSupabaseSession";
+import { PollNowButton } from "@/components/PollNowButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { TabsList, TabsTrigger } from "@/components/ui/Tabs";
 import { Badge } from "@/components/ui/Badge";
@@ -37,6 +38,7 @@ export default function InboxPage() {
 
   const [buckets, setBuckets] = useState<BucketRow[]>([]);
   const [items, setItems] = useState<EmailItemRow[]>([]);
+  const [reloadTick, setReloadTick] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,7 +87,7 @@ export default function InboxPage() {
     return () => {
       alive = false;
     };
-  }, [session, supabase]);
+  }, [session, supabase, reloadTick]);
 
   const bucketById = useMemo(() => {
     const m = new Map<string, BucketRow>();
@@ -155,23 +157,29 @@ export default function InboxPage() {
             </select>
           </div>
 
-          <TabsList>
-            <TabsTrigger
-              active={view === "needs_review"}
-              onClick={() => setView("needs_review")}
-            >
-              Needs review
-            </TabsTrigger>
-            <TabsTrigger
-              active={view === "sent"}
-              onClick={() => setView("sent")}
-            >
-              Sent
-            </TabsTrigger>
-            <TabsTrigger active={view === "all"} onClick={() => setView("all")}>
-              All
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex flex-wrap items-center gap-2">
+            <PollNowButton onComplete={() => setReloadTick((t) => t + 1)} />
+            <TabsList>
+              <TabsTrigger
+                active={view === "needs_review"}
+                onClick={() => setView("needs_review")}
+              >
+                Needs review
+              </TabsTrigger>
+              <TabsTrigger
+                active={view === "sent"}
+                onClick={() => setView("sent")}
+              >
+                Sent
+              </TabsTrigger>
+              <TabsTrigger
+                active={view === "all"}
+                onClick={() => setView("all")}
+              >
+                All
+              </TabsTrigger>
+            </TabsList>
+          </div>
         </div>
       ) : null}
 

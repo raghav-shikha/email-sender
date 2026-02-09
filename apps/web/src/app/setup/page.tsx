@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useSupabaseSession } from "@/lib/useSupabaseSession";
 import { ContinueWithGoogleButton } from "@/components/ContinueWithGoogleButton";
 import { GmailConnectButton } from "@/components/GmailConnectButton";
+import { PollNowButton } from "@/components/PollNowButton";
 import { PushEnableButton } from "@/components/PushEnableButton";
 import { ContextPackForm } from "@/components/ContextPackForm";
 import { BucketEditor } from "@/components/BucketEditor";
@@ -54,6 +55,7 @@ function SetupClient() {
   const [error, setError] = useState<string | null>(null);
   const [autoStarted, setAutoStarted] = useState(false);
   const [prefsTab, setPrefsTab] = useState<"context" | "buckets">("context");
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -96,7 +98,7 @@ function SetupClient() {
     return () => {
       alive = false;
     };
-  }, [session, supabase]);
+  }, [session, supabase, reloadTick]);
 
   useEffect(() => {
     if (!autoConnect) return;
@@ -241,6 +243,13 @@ function SetupClient() {
                 >
                   Sign out
                 </Button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <PollNowButton
+                  label="Poll now"
+                  onComplete={() => setReloadTick((t) => t + 1)}
+                />
               </div>
             </CardContent>
           </Card>

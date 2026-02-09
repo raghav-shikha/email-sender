@@ -128,6 +128,206 @@ async def oauth_google_callback(code: str, state: str, supabase: SupabaseRest = 
     return RedirectResponse(url=dest, status_code=302)
 
 
+
+
+@app.post("/poll/now")
+async def poll_now(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+    supabase: SupabaseRest = Depends(get_supabase),
+) -> dict[str, Any]:
+    """Manually trigger a poll for the signed-in user (no cron secret needed)."""
+
+    try:
+        user_id = await require_user_id_from_authorization_header(authorization)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+    # Load active Gmail accounts for this user.
+    try:
+        accounts = await supabase.select(
+            "gmail_accounts",
+            columns="id,user_id,google_email,refresh_token_encrypted,last_polled_at,status",
+            filters={"user_id": f"eq.{user_id}", "status": "eq.active"},
+            limit=20,
+        )
+    except SupabaseRestError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    now = datetime.now(tz=timezone.utc)
+    total_new = 0
+    per_account: list[dict[str, Any]] = []
+
+    for acc in accounts:
+        gmail_account_id = acc["id"]
+
+        started_at = datetime.now(tz=timezone.utc)
+        inserted = 0
+        processed_counts: dict[str, Any] = {}
+        errors: list[str] = []
+
+        # Small throttle to avoid rapid double-clicks hammering Gmail.
+        last_polled_at = acc.get("last_polled_at")
+        try:
+            last_dt = datetime.fromisoformat(last_polled_at.replace("Z", "+00:00")) if last_polled_at else None
+        except Exception:
+            last_dt = None
+
+        if last_dt and (now - last_dt).total_seconds() < 10:
+            per_account.append(
+                {
+                    "gmail_account_id": gmail_account_id,
+                    "user_id": user_id,
+                    "new": 0,
+                    "processed": 0,
+                    "relevant": 0,
+                    "pushed": 0,
+                    "failed": 0,
+                    "skipped": True,
+                    "skip_reason": "throttled",
+                    "errors": [],
+                }
+            )
+            continue
+
+        try:
+            refresh_token = decrypt_text(acc["refresh_token_encrypted"])
+            access_token = await refresh_access_token(refresh_token=refresh_token)
+
+            if last_polled_at:
+                try:
+                    after_dt = datetime.fromisoformat(last_polled_at.replace("Z", "+00:00"))
+                except Exception:
+                    after_dt = now - timedelta(hours=1)
+            else:
+                after_dt = now - timedelta(hours=1)
+
+            q = " ".join(
+                [
+                    "in:inbox",
+                    f"after:{int(after_dt.timestamp())}",
+                    "-category:social",
+                    "-category:forums",
+                ]
+            )
+            page_token: str | None = None
+            fetched = 0
+            max_fetch = 200
+
+            while True:
+                page, page_token = await list_messages_page(
+                    access_token=access_token,
+                    query=q,
+                    max_results=50,
+                    page_token=page_token,
+                )
+                if not page:
+                    break
+
+                for msg in page:
+                    message_id = msg.get("id")
+                    if not message_id:
+                        continue
+
+                    full = await get_message_full(access_token=access_token, message_id=message_id)
+                    headers = _extract_headers(full)
+                    from_email = parse_from_email(headers.get("from"))
+                    subject = headers.get("subject")
+                    snippet = full.get("snippet")
+                    received_at_dt = parse_received_at(full)
+                    body_text = extract_body_text(full)
+
+                    row = {
+                        "user_id": user_id,
+                        "gmail_account_id": gmail_account_id,
+                        "gmail_message_id": full.get("id"),
+                        "thread_id": full.get("threadId"),
+                        "from_email": from_email,
+                        "subject": subject,
+                        "snippet": snippet,
+                        "body_text": body_text,
+                        "received_at": (received_at_dt or now).isoformat(),
+                        "status": "ingested",
+                    }
+
+                    try:
+                        res = await supabase.insert(
+                            "email_items",
+                            row,
+                            upsert=True,
+                            ignore_duplicates=True,
+                            on_conflict="gmail_account_id,gmail_message_id",
+                        )
+                        inserted += len(res) if isinstance(res, list) else 0
+                    except SupabaseRestError as e:
+                        errors.append(str(e))
+
+                fetched += len(page)
+                if not page_token or fetched >= max_fetch:
+                    break
+
+            # Process any newly ingested items (AI + push). Best-effort.
+            try:
+                proc = await process_ingested_for_account(
+                    supabase=supabase,
+                    user_id=user_id,
+                    gmail_account_id=gmail_account_id,
+                    max_items=25,
+                )
+                processed_counts = proc.get("counts") or {}
+                errors.extend(proc.get("errors") or [])
+            except Exception as e:
+                errors.append(f"processing error: {e}")
+
+            await supabase.update(
+                "gmail_accounts",
+                {"last_polled_at": now.isoformat(), "error_message": None},
+                filters={"id": f"eq.{gmail_account_id}"},
+            )
+        except Exception as e:
+            errors.append(str(e))
+            try:
+                await supabase.update(
+                    "gmail_accounts",
+                    {"status": "active", "error_message": str(e)},
+                    filters={"id": f"eq.{gmail_account_id}"},
+                )
+            except Exception:
+                pass
+
+        finished_at = datetime.now(tz=timezone.utc)
+        try:
+            await supabase.insert(
+                "processing_runs",
+                {
+                    "user_id": user_id,
+                    "gmail_account_id": gmail_account_id,
+                    "started_at": started_at.isoformat(),
+                    "finished_at": finished_at.isoformat(),
+                    "counts": {"inserted": inserted, **(processed_counts or {})},
+                    "log_json": {"errors": errors},
+                },
+            )
+        except Exception:
+            pass
+
+        total_new += inserted
+        per_account.append(
+            {
+                "gmail_account_id": gmail_account_id,
+                "user_id": user_id,
+                "new": inserted,
+                "processed": processed_counts.get("processed", 0) if processed_counts else 0,
+                "relevant": processed_counts.get("relevant", 0) if processed_counts else 0,
+                "pushed": processed_counts.get("pushed", 0) if processed_counts else 0,
+                "failed": processed_counts.get("failed", 0) if processed_counts else 0,
+                "skipped": False,
+                "errors": errors,
+            }
+        )
+
+    return {"ok": True, "total_new": total_new, "per_account": per_account}
+
+
 @app.post("/cron/poll-gmail")
 async def cron_poll_gmail(
     request: Request,
