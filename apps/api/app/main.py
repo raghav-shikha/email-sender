@@ -181,7 +181,6 @@ async def cron_poll_gmail(
                 [
                     "in:inbox",
                     f"after:{int(after_dt.timestamp())}",
-                    "-category:promotions",
                     "-category:social",
                     "-category:forums",
                 ]
